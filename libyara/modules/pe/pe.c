@@ -39,6 +39,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <yara/dotnet.h>
 #include <yara/endian.h>
+#include <yara/limits.h>
 #include <yara/mem.h>
 #include <yara/modules.h>
 #include <yara/pe.h>
@@ -366,9 +367,9 @@ static void pe_parse_debug_directory(PE* pe)
     if (pdb_path != NULL)
     {
       pdb_path_len = strnlen(
-          pdb_path, yr_min(available_space(pe, pdb_path), MAX_PATH));
+          pdb_path, yr_min(available_space(pe, pdb_path), YR_MAX_PATH));
 
-      if (pdb_path_len >= 0 && pdb_path_len < MAX_PATH)
+      if (pdb_path_len >= 0 && pdb_path_len < YR_MAX_PATH)
       {
         yr_set_sized_string(pdb_path, pdb_path_len, pe->object, "pdb_path");
         break;
@@ -3371,7 +3372,7 @@ define_function(is_64bit)
 // Returns the number of rich signatures that match the specified version and
 // toolid numbers.
 //
-static uint64_t _rich_version(
+static int64_t _rich_version(
     YR_OBJECT* module,
     uint64_t version,
     uint64_t toolid)
@@ -3382,7 +3383,7 @@ static uint64_t _rich_version(
   PRICH_SIGNATURE clear_rich_signature;
   SIZED_STRING* rich_string;
 
-  uint64_t result = 0;
+  int64_t result = 0;
 
   // Check if the required fields are set
   if (yr_is_undefined(module, "rich_signature.length"))
@@ -3391,17 +3392,22 @@ static uint64_t _rich_version(
   rich_length = yr_get_integer(module, "rich_signature.length");
   rich_string = yr_get_string(module, "rich_signature.clear_data");
 
-  // If the clear_data was not set, return YR_UNDEFINED
+  // If clear_data was not set, return YR_UNDEFINED
   if (rich_string == NULL)
     return YR_UNDEFINED;
 
+  // File e77b007c9a964411c5e33afeec18be32c86963b78f3c3e906b28fcf1382f46c3
+  // has a Rich header of length 8, which is smaller than RICH_SIGNATURE and
+  // causes a crash.
+  if (rich_length < sizeof(RICH_SIGNATURE))
+    return YR_UNDEFINED;
+
   if (version == YR_UNDEFINED && toolid == YR_UNDEFINED)
-    return false;
+    return 0;
 
   clear_rich_signature = (PRICH_SIGNATURE) rich_string->c_string;
 
   // Loop over the versions in the rich signature
-
   rich_count = (rich_length - sizeof(RICH_SIGNATURE)) /
                sizeof(RICH_VERSION_INFO);
 
