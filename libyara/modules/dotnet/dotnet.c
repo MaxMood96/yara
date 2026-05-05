@@ -1958,11 +1958,8 @@ void dotnet_parse_tilde_2(
   uint8_t index_size, index_size2;
 
   // Number of rows is the number of bits set to 1 in Valid.
-  // Should use this technique:
-  // http://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetKernighan
   // Count number of Rows size entries in header to skip over them
-  for (i = 0; i < 64; i++)
-    valid_rows += ((yr_le64toh(tilde_header->Valid) >> i) & 0x01);
+  valid_rows = yr_popcount64(yr_le64toh(tilde_header->Valid));
 
   row_offset = (uint32_t*) (tilde_header + 1);
   table_offset = (uint8_t*) row_offset;
@@ -3129,7 +3126,7 @@ void dotnet_parse_tilde(PE* pe, PCLI_HEADER cli_header, PSTREAMS streams)
   // Save the row offset.
   row_offset = (uint32_t*) (tilde_header + 1);
 
-  uint32_t valid_count = __builtin_popcountll(yr_le64toh(tilde_header->Valid));
+  uint32_t valid_count = yr_popcount64(yr_le64toh(tilde_header->Valid));
   
   if (!fits_in_pe(pe, row_offset, valid_count * sizeof(uint32_t)))
     return;
