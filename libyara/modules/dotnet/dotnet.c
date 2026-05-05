@@ -3074,7 +3074,6 @@ void dotnet_parse_tilde_2(
 
 void dotnet_parse_tilde(PE* pe, PCLI_HEADER cli_header, PSTREAMS streams)
 {
-  PTILDE_HEADER tilde_header;
   int64_t resource_base;
   int64_t metadata_root = streams->metadata_root;
   uint32_t* row_offset = NULL;
@@ -3101,8 +3100,12 @@ void dotnet_parse_tilde(PE* pe, PCLI_HEADER cli_header, PSTREAMS streams)
   // Default index sizes are 2. Will be bumped to 4 if necessary.
   memset(&index_sizes, 2, sizeof(index_sizes));
 
-  tilde_header = (PTILDE_HEADER) (pe->data + metadata_root +
+  const PTILDE_HEADER tilde_header = (PTILDE_HEADER) (pe->data + metadata_root +
                                   yr_le32toh(streams->tilde->Offset));
+
+  const uint8_t* tilde_stream_end = pe->data + metadata_root +
+                                    yr_le32toh(streams->tilde->Offset) +
+                                    yr_le32toh(streams->tilde->Size);
 
   if (!struct_fits_in_pe(pe, tilde_header, TILDE_HEADER))
     return;
@@ -3126,6 +3129,11 @@ void dotnet_parse_tilde(PE* pe, PCLI_HEADER cli_header, PSTREAMS streams)
   // Save the row offset.
   row_offset = (uint32_t*) (tilde_header + 1);
 
+  uint32_t valid_count = __builtin_popcountll(yr_le64toh(tilde_header->Valid));
+  
+  if (!fits_in_pe(pe, row_offset, valid_count * sizeof(uint32_t)))
+    return;
+
   // Walk all the bits first because we need to know the number of rows for
   // some tables in order to parse others. In particular this applies to
   // coded indexes, which are documented in ECMA-335 II.24.2.6.
@@ -3134,8 +3142,8 @@ void dotnet_parse_tilde(PE* pe, PCLI_HEADER cli_header, PSTREAMS streams)
     if (!((yr_le64toh(tilde_header->Valid) >> bit_check) & 0x01))
       continue;
 
-#define ROW_CHECK(name)                                                  \
-  if (fits_in_pe(pe, row_offset, (matched_bits + 1) * sizeof(uint32_t))) \
+#define ROW_CHECK(name)                                              \
+  if ((uint8_t*)(row_offset + matched_bits + 1) <= tilde_stream_end) \
     rows.name = *(row_offset + matched_bits);
 
 #define ROW_CHECK_WITH_INDEX(name)    \
